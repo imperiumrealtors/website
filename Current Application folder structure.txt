@@ -1,0 +1,31 @@
+C:\Vishok\Business\Real Estate
+├── 📁 public/                     # Icons, vectors, and brand graphics
+├── 📁 src/
+│   ├── 📁 app/                    # Next.js App Router (Pages & Routes)
+│   │   ├── 📁 admin/              # Admin CRM & Lead Management Dashboard (/admin)
+│   │   ├── 📁 book-visit/         # 3-Step Site Visit Booking Wizard (/book-visit)
+│   │   ├── 📁 compare/            # Side-by-Side Property Comparison (/compare)
+│   │   ├── 📁 contact/            # Contact & Location Details (/contact)
+│   │   ├── 📁 plots/              # Dedicated Plot & Land Marketplace (/plots)
+│   │   ├── 📁 projects/           # Gated Community & Township Portfolio (/projects)
+│   │   ├── 📁 properties/         # Property Catalog & Detail Pages
+│   │   │   ├── 📁 [slug]/         # Interactive Digital Sales Brochure Page
+│   │   │   └── page.tsx        # Searchable & Filterable Catalog Page
+│   │   ├── 📁 saved/              # Bookmarked Properties Page (/saved)
+│   │   ├── favicon.ico         # Application Favicon
+│   │   ├── globals.css         # Design System Tokens, CSS Variables & Layout Utilities
+│   │   ├── layout.tsx          # Master Layout (Header Navbar & Footer)
+│   │   └── page.tsx            # Digital Showroom Homepage
+│   ├── 📁 components/             # Reusable UI Components
+│   │   ├── Footer.tsx          # Site Footer with Links & Contact Info
+│   │   ├── Navbar.tsx          # Navigation Header with Mobile Drawer
+│   │   └── PropertyCard.tsx    # Property Card Component
+│   └── 📁 lib/                    # Data Layer & TypeScript Definitions
+│       ├── data.ts             # Dataset (Plots, Apartments, Villas, Projects, EMI logic)
+│       └── types.ts            # Type Interfaces for Properties, Plots, Leads, Visits
+├── README.md                   # Comprehensive Setup & Architecture Guide
+├── package.json                # Project Dependencies & Scripts
+├── tsconfig.json               # TypeScript Configuration
+├── next.config.ts              # Next.js Configuration
+├── postcss.config.mjs          # PostCSS Configuration
+└── eslint.config.mjs           # ESLint Configuration
