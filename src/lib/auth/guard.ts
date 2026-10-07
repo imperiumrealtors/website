@@ -46,8 +46,11 @@ export function assertSameOrigin(req: NextRequest) {
   }
   const origin = req.headers.get('origin');
   if (origin) {
-    const expected = req.nextUrl.origin;
-    if (origin !== expected) throw new HttpError(403, 'Cross-site request rejected.');
+    // Behind a TLS-terminating proxy (e.g. Render) the app sees http://, so compare hosts, not full origins.
+    const host = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? req.nextUrl.host;
+    let originHost: string | null = null;
+    try { originHost = new URL(origin).host; } catch { /* malformed Origin */ }
+    if (originHost !== host) throw new HttpError(403, 'Cross-site request rejected.');
   }
 }
 
