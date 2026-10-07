@@ -10,8 +10,8 @@ export default async function MediaPage() {
   const user = await requirePagePermission('media:read');
   return (
     <MediaManager
-      initial={listMedia()}
-      layouts={listLayouts({ includeInactive: true }).map((l) => ({ id: l.id, name: l.name }))}
+      initial={await listMedia()}
+      layouts={(await listLayouts({ includeInactive: true })).map((l) => ({ id: l.id, name: l.name }))}
       canWrite={can(user.role, 'media:write')}
     />
   );

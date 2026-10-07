@@ -1,21 +1,23 @@
 import 'server-only';
 import { getLayoutBySlug, layoutToProperty, listLayouts } from './db/layouts';
-import { listPlotsForLayout } from './db/plots';
+import { listPlotsForLayout, listPlotsForLayouts } from './db/plots';
 import type { Layout, Property } from './types';
 
 /** Server-only reads that shape DB rows into the models the public components already render. */
 
-export function getPublicProperties(): Property[] {
-  return listLayouts().map((l) => layoutToProperty(l, listPlotsForLayout(l.id)));
+export async function getPublicProperties(): Promise<Property[]> {
+  const layouts = await listLayouts();
+  const plots = await listPlotsForLayouts(layouts.map((l) => l.id));
+  return layouts.map((l) => layoutToProperty(l, plots.get(l.id) ?? []));
 }
 
-export function getPublicPropertyBySlug(slug: string): Property | null {
-  const layout = getLayoutBySlug(slug);
-  return layout ? layoutToProperty(layout, listPlotsForLayout(layout.id)) : null;
+export async function getPublicPropertyBySlug(slug: string): Promise<Property | null> {
+  const layout = await getLayoutBySlug(slug);
+  return layout ? layoutToProperty(layout, await listPlotsForLayout(layout.id)) : null;
 }
 
-export function getPublicLayouts(): Layout[] {
-  return listLayouts().map((l) => ({
+export async function getPublicLayouts(): Promise<Layout[]> {
+  return (await listLayouts()).map((l) => ({
     id: l.id,
     name: l.name,
     builder: l.builder,
@@ -37,10 +39,10 @@ export function getPublicLayouts(): Layout[] {
   }));
 }
 
-export function getPublicStats() {
-  const props = getPublicProperties();
+export async function getPublicStats() {
+  const layouts = await listLayouts();
   return {
-    layouts: props.length,
-    availablePlots: props.reduce((s, p) => s + (p.land?.availablePlots ?? 0), 0),
+    layouts: layouts.length,
+    availablePlots: layouts.reduce((s, l) => s + l.availablePlots, 0),
   };
 }

@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic';
 
 export default async function LayoutsPage() {
   const user = await requirePagePermission('layouts:read');
-  return <LayoutsTable initial={listLayouts({ includeInactive: true })} canWrite={can(user.role, 'layouts:write')} />;
+  return <LayoutsTable initial={await listLayouts({ includeInactive: true })} canWrite={can(user.role, 'layouts:write')} />;
 }

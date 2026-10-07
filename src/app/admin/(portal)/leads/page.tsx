@@ -11,9 +11,9 @@ export default async function LeadsPage() {
   const user = await requirePagePermission('leads:read');
   return (
     <LeadsManager
-      initial={listLeads()}
-      layouts={listLayouts({ includeInactive: true }).map((l) => ({ id: l.id, name: l.name }))}
-      staff={listUsers({ portalOnly: true }).filter((u) => u.status === 'active').map((u) => ({ id: u.id, name: u.name }))}
+      initial={await listLeads()}
+      layouts={(await listLayouts({ includeInactive: true })).map((l) => ({ id: l.id, name: l.name }))}
+      staff={(await listUsers({ portalOnly: true })).filter((u) => u.status === 'active').map((u) => ({ id: u.id, name: u.name }))}
       canWrite={can(user.role, 'leads:write')}
       currentUserId={user.id}
     />

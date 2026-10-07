@@ -5,9 +5,9 @@ import { clearedSessionCookieOptions, destroySession, resolveSession, SESSION_CO
 export const POST = handle(async (req: NextRequest) => {
   assertSameOrigin(req);
   const token = req.cookies.get(SESSION_COOKIE)?.value;
-  const user = resolveSession(token);
-  if (token) destroySession(token);
-  if (user) audit(user, 'logout', 'user', user.id, {}, clientIp(req));
+  const user = await resolveSession(token);
+  if (token) await destroySession(token);
+  if (user) await audit(user, 'logout', 'user', user.id, {}, clientIp(req));
 
   const res = NextResponse.json({ ok: true, data: null });
   res.cookies.set(SESSION_COOKIE, '', clearedSessionCookieOptions());

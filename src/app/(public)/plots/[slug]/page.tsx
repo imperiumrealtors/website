@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export default async function PlotDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const plot = getPublicPropertyBySlug(slug);
+  const plot = await getPublicPropertyBySlug(slug);
   if (!plot) notFound();
   return <PlotDetail plot={plot} />;
 }

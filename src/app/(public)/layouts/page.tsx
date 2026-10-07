@@ -12,9 +12,8 @@ const statusStyle: Record<string, { bg: string; color: string }> = {
   'Fully Sold': { bg: 'rgba(18,140,90,0.9)', color: '#fff' },
 };
 
-export default function LayoutsPage() {
-  const activeLayouts = getPublicLayouts();
-  const properties = getPublicProperties();
+export default async function LayoutsPage() {
+  const [activeLayouts, properties] = await Promise.all([getPublicLayouts(), getPublicProperties()]);
   const totalPlots = activeLayouts.reduce((sum, l) => sum + l.totalPlots, 0);
 
   return (

@@ -9,13 +9,13 @@ export const dynamic = 'force-dynamic';
 export default async function PlotsPage({ searchParams }: { searchParams: Promise<{ layoutId?: string }> }) {
   const user = await requirePagePermission('plots:read');
   const { layoutId } = await searchParams;
-  const layouts = listLayouts({ includeInactive: true });
+  const layouts = await listLayouts({ includeInactive: true });
   const initialLayout = layoutId && layouts.some((l) => l.id === layoutId) ? layoutId : '';
   return (
     <PlotsManager
       layouts={layouts.map((l) => ({ id: l.id, name: l.name }))}
       initialLayoutId={initialLayout}
-      initialPlots={listPlots(initialLayout ? { layoutId: initialLayout } : {})}
+      initialPlots={await listPlots(initialLayout ? { layoutId: initialLayout } : {})}
       canWrite={can(user.role, 'plots:write')}
     />
   );

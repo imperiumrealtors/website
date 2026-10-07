@@ -7,22 +7,22 @@ type Ctx = { params: Promise<{ id: string }> };
 
 export const PATCH = handle(async (req: NextRequest, { params }: Ctx) => {
   assertSameOrigin(req);
-  const user = requireApiPermission(req, 'visits:write');
+  const user = await requireApiPermission(req, 'visits:write');
   const { id } = await params;
-  if (!getVisit(id)) throw new HttpError(404, 'Site visit not found.');
+  if (!await getVisit(id)) throw new HttpError(404, 'Site visit not found.');
   const input = validateVisit(await readJson(req), true);
-  const visit = updateVisit(id, input);
-  audit(user, 'visit.update', 'site_visit', id, { changes: Object.keys(input), status: visit?.status }, clientIp(req));
+  const visit = await updateVisit(id, input);
+  await audit(user, 'visit.update', 'site_visit', id, { changes: Object.keys(input), status: visit?.status }, clientIp(req));
   return ok(visit);
 });
 
 export const DELETE = handle(async (req: NextRequest, { params }: Ctx) => {
   assertSameOrigin(req);
-  const user = requireApiPermission(req, 'visits:write');
+  const user = await requireApiPermission(req, 'visits:write');
   const { id } = await params;
-  const existing = getVisit(id);
+  const existing = await getVisit(id);
   if (!existing) throw new HttpError(404, 'Site visit not found.');
-  deleteVisit(id);
-  audit(user, 'visit.delete', 'site_visit', id, { customer: existing.customerName }, clientIp(req));
+  await deleteVisit(id);
+  await audit(user, 'visit.delete', 'site_visit', id, { customer: existing.customerName }, clientIp(req));
   return ok(null);
 });

@@ -1,7 +1,5 @@
-import { getDb, newId, nowIso } from './index';
+import { all, newId, nowIso, one, run, transaction, type Row } from './index';
 import type { Lead, LeadStatus } from '../types';
-
-type Row = Record<string, unknown>;
 
 function rowToLead(r: Row): Lead {
   return {
@@ -34,11 +32,11 @@ const BASE = `
 
 export type LeadSort = 'newest' | 'oldest' | 'name' | 'status';
 
-export function listLeads(opts: {
+export async function listLeads(opts: {
   search?: string; status?: LeadStatus; assignedTo?: string; layoutId?: string; sort?: LeadSort; limit?: number;
-} = {}): Lead[] {
+} = {}): Promise<Lead[]> {
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
   if (opts.search) {
     where.push('(ld.name LIKE ? OR ld.phone LIKE ? OR ld.email LIKE ? OR l.name LIKE ?)');
     const q = `%${opts.search}%`;
@@ -54,45 +52,50 @@ export function listLeads(opts: {
     status: 'ld.status ASC, ld.created_at DESC',
   }[opts.sort ?? 'newest'];
   const sql = `${BASE} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order} ${opts.limit ? `LIMIT ${Number(opts.limit)}` : ''}`;
-  return (getDb().prepare(sql).all(...(params as string[])) as Row[]).map(rowToLead);
+  return (await all(sql, ...params)).map(rowToLead);
 }
 
-export function getLead(id: string): Lead | null {
-  const row = getDb().prepare(`${BASE} WHERE ld.id = ?`).get(id) as Row | undefined;
+export async function getLead(id: string): Promise<Lead | null> {
+  const row = await one(`${BASE} WHERE ld.id = ?`, id);
   return row ? rowToLead(row) : null;
 }
 
 export type LeadInput = Omit<Lead, 'id' | 'createdAt' | 'updatedAt' | 'layoutName' | 'plotNumber' | 'assignedName'>;
 
-export function createLead(input: LeadInput): Lead {
+export async function createLead(input: LeadInput): Promise<Lead> {
   const id = newId();
   const ts = nowIso();
-  getDb().prepare(`
+  await run(`
     INSERT INTO leads (id, name, phone, email, layout_id, plot_id, budget, source, status, assigned_to, notes, created_at, updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(id, input.name, input.phone, input.email, input.layoutId, input.plotId, input.budget, input.source,
+  `, id, input.name, input.phone, input.email, input.layoutId, input.plotId, input.budget, input.source,
     input.status, input.assignedTo, input.notes, ts, ts);
-  return getLead(id)!;
+  return (await getLead(id))!;
 }
 
-export function updateLead(id: string, input: Partial<LeadInput>): Lead | null {
-  const current = getLead(id);
+export async function updateLead(id: string, input: Partial<LeadInput>): Promise<Lead | null> {
+  const current = await getLead(id);
   if (!current) return null;
   const next = { ...current, ...input };
-  getDb().prepare(`
+  await run(`
     UPDATE leads SET name=?, phone=?, email=?, layout_id=?, plot_id=?, budget=?, source=?, status=?, assigned_to=?, notes=?, updated_at=?
     WHERE id = ?
-  `).run(next.name, next.phone, next.email, next.layoutId, next.plotId, next.budget, next.source, next.status,
+  `, next.name, next.phone, next.email, next.layoutId, next.plotId, next.budget, next.source, next.status,
     next.assignedTo, next.notes, nowIso(), id);
   return getLead(id);
 }
 
-export function deleteLead(id: string): boolean {
-  return getDb().prepare('DELETE FROM leads WHERE id = ?').run(id).changes > 0;
+export async function deleteLead(id: string): Promise<boolean> {
+  const [, deleted] = await transaction([
+    { sql: 'UPDATE site_visits SET lead_id = NULL WHERE lead_id = ?', args: [id] },
+    { sql: 'DELETE FROM leads WHERE id = ?', args: [id] },
+  ]);
+  return deleted > 0;
 }
 
-export function leadCounts(): { total: number; fresh: number } {
-  const total = (getDb().prepare('SELECT COUNT(*) AS n FROM leads').get() as { n: number }).n;
-  const fresh = (getDb().prepare("SELECT COUNT(*) AS n FROM leads WHERE status = 'New'").get() as { n: number }).n;
-  return { total, fresh };
+export async function leadCounts(): Promise<{ total: number; fresh: number }> {
+  const row = await one<{ total: number; fresh: number }>(
+    "SELECT COUNT(*) AS total, COALESCE(SUM(status = 'New'), 0) AS fresh FROM leads",
+  );
+  return { total: Number(row?.total ?? 0), fresh: Number(row?.fresh ?? 0) };
 }

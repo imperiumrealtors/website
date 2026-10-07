@@ -1,22 +1,26 @@
-import { getDb, parseJson } from './index';
+import { all, one, parseJson } from './index';
 import { leadCounts, listLeads } from './leads';
 import { listVisits, visitCounts } from './visits';
 import { recentlyUpdatedLayouts } from './layouts';
 import { plotStatusSummary } from './plots';
 import type { AuditLog } from '../types';
 
-export function dashboardStats() {
-  const db = getDb();
-  const layouts = (db.prepare('SELECT COUNT(*) AS n FROM layouts WHERE active = 1').get() as { n: number }).n;
-  const plots = plotStatusSummary();
+export async function dashboardStats() {
+  const [layoutsRow, plots, leads, visits, recentLeads, upcomingVisits, recentLayouts] = await Promise.all([
+    one<{ n: number }>('SELECT COUNT(*) AS n FROM layouts WHERE active = 1'),
+    plotStatusSummary(),
+    leadCounts(),
+    visitCounts(),
+    listLeads({ limit: 6 }),
+    listVisits({ window: 'upcoming', limit: 6 }),
+    recentlyUpdatedLayouts(5),
+  ]);
   const byStatus = Object.fromEntries(plots.map((p) => [p.status, p.count])) as Record<string, number>;
   const totalPlots = plots.reduce((s, p) => s + p.count, 0);
-  const leads = leadCounts();
-  const visits = visitCounts();
 
   return {
     cards: {
-      totalLayouts: layouts,
+      totalLayouts: Number(layoutsRow?.n ?? 0),
       totalPlots,
       availablePlots: byStatus.Available ?? 0,
       soldPlots: byStatus.Sold ?? 0,
@@ -27,20 +31,20 @@ export function dashboardStats() {
       upcomingVisits: visits.upcoming,
       completedVisits: visits.completed,
     },
-    recentLeads: listLeads({ limit: 6 }),
-    upcomingVisits: listVisits({ window: 'upcoming', limit: 6 }),
-    recentLayouts: recentlyUpdatedLayouts(5),
+    recentLeads,
+    upcomingVisits,
+    recentLayouts,
     plotAvailability: plots,
   };
 }
 
-export type DashboardStats = ReturnType<typeof dashboardStats>;
+export type DashboardStats = Awaited<ReturnType<typeof dashboardStats>>;
 
-export function listAuditLogs(limit = 100): AuditLog[] {
-  const rows = getDb().prepare(`
+export async function listAuditLogs(limit = 100): Promise<AuditLog[]> {
+  const rows = await all(`
     SELECT a.*, u.name AS user_name FROM audit_logs a LEFT JOIN users u ON u.id = a.user_id
     ORDER BY a.created_at DESC LIMIT ?
-  `).all(limit) as Record<string, unknown>[];
+  `, limit);
   return rows.map((r) => ({
     id: r.id as string,
     userId: (r.user_id as string | null) ?? null,

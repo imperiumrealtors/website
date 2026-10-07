@@ -1,7 +1,7 @@
 import 'server-only';
 import { createHash, randomBytes } from 'node:crypto';
 import { cookies } from 'next/headers';
-import { getDb, nowIso } from '../db';
+import { nowIso, one, run } from '../db';
 import type { Role, User } from '../types';
 
 export const SESSION_COOKIE = 'vk_admin_session';
@@ -27,47 +27,45 @@ export interface SessionUser extends User {
   sessionId: string;
 }
 
-export function createSession(userId: string, meta: { ip?: string | null; userAgent?: string | null }) {
+export async function createSession(userId: string, meta: { ip?: string | null; userAgent?: string | null }) {
   const token = randomBytes(32).toString('base64url');
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
-  getDb().prepare(`
+  await run(`
     INSERT INTO sessions (id, user_id, expires_at, created_at, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?)
-  `).run(hashToken(token), userId, expiresAt.toISOString(), nowIso(), meta.ip ?? null, meta.userAgent ?? null);
+  `, hashToken(token), userId, expiresAt.toISOString(), nowIso(), meta.ip ?? null, meta.userAgent ?? null);
   return { token, expiresAt };
 }
 
-export function destroySession(token: string) {
-  getDb().prepare('DELETE FROM sessions WHERE id = ?').run(hashToken(token));
+export async function destroySession(token: string) {
+  await run('DELETE FROM sessions WHERE id = ?', hashToken(token));
 }
 
-export function destroyAllSessionsForUser(userId: string) {
-  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
+export async function destroyAllSessionsForUser(userId: string) {
+  await run('DELETE FROM sessions WHERE user_id = ?', userId);
 }
 
-export function purgeExpiredSessions() {
-  getDb().prepare('DELETE FROM sessions WHERE expires_at < ?').run(nowIso());
+export async function purgeExpiredSessions() {
+  await run('DELETE FROM sessions WHERE expires_at < ?', nowIso());
 }
 
 /** Resolve a raw cookie token to an active user, or null. Inactive users and expired sessions are rejected. */
-export function resolveSession(token: string | undefined | null): SessionUser | null {
+export async function resolveSession(token: string | undefined | null): Promise<SessionUser | null> {
   if (!token) return null;
-  const db = getDb();
-  const row = db.prepare(`
+  const row = await one<SessionRow>(`
     SELECT s.id, s.user_id, s.expires_at,
            u.name, u.email, u.role, u.status, u.created_at, u.updated_at, u.last_login_at
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id = ?
-  `).get(hashToken(token)) as SessionRow | undefined;
+  `, hashToken(token));
 
   if (!row) return null;
   const expires = new Date(row.expires_at).getTime();
   if (expires < Date.now() || row.status !== 'active') {
-    db.prepare('DELETE FROM sessions WHERE id = ?').run(row.id);
+    await run('DELETE FROM sessions WHERE id = ?', row.id);
     return null;
   }
   if (expires - Date.now() < RENEW_THRESHOLD_MS) {
-    db.prepare('UPDATE sessions SET expires_at = ? WHERE id = ?')
-      .run(new Date(Date.now() + SESSION_TTL_MS).toISOString(), row.id);
+    await run('UPDATE sessions SET expires_at = ? WHERE id = ?', new Date(Date.now() + SESSION_TTL_MS).toISOString(), row.id);
   }
   return {
     sessionId: row.id,

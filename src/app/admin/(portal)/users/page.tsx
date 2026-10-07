@@ -7,5 +7,5 @@ export const dynamic = 'force-dynamic';
 
 export default async function UsersPage() {
   const user = await requirePagePermission('users:read');
-  return <UsersManager initial={listUsers()} canWrite={can(user.role, 'users:write')} currentUserId={user.id} />;
+  return <UsersManager initial={await listUsers()} canWrite={can(user.role, 'users:write')} currentUserId={user.id} />;
 }

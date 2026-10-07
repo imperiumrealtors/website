@@ -34,21 +34,21 @@ export const POST = handle(async (req: NextRequest) => {
   const pickup = v.boolean('pickup', false);
   v.throwIfInvalid();
 
-  const layout = getLayoutBySlug(layoutSlug);
+  const layout = await getLayoutBySlug(layoutSlug);
   if (!layout) throw new HttpError(422, 'Please fix the highlighted fields.', { layoutSlug: 'That layout is no longer available.' });
   if (date < new Date().toISOString().slice(0, 10)) throw new HttpError(422, 'Please fix the highlighted fields.', { date: 'Pick a date from today onwards.' });
 
   // Reuse an open lead for this phone number so the CRM does not fill with duplicates.
-  const existing = listLeads({ search: phone, limit: 1 }).find((l) => l.phone === phone && l.status !== 'Lost' && l.status !== 'Converted');
-  const lead = existing ?? createLead({
+  const existing = (await listLeads({ search: phone, limit: 1 })).find((l) => l.phone === phone && l.status !== 'Lost' && l.status !== 'Converted');
+  const lead = existing ?? await createLead({
     name, phone, email: '', budget: '', source: 'Website — site visit', notes: `Requested a site visit to ${layout.name}.`,
     layoutId: layout.id, plotId: null, status: 'Site Visit Scheduled', assignedTo: null,
   });
 
-  const visit = createVisit({
+  const visit = await createVisit({
     leadId: lead.id, customerName: name, phone, layoutId: layout.id, preferredDate: date, preferredTime: time,
     visitors, pickup, assignedTo: lead.assignedTo, status: 'Requested', notes: '',
   });
-  audit(null, 'visit.web_request', 'site_visit', visit.id, { layout: layout.name, date }, ip);
+  await audit(null, 'visit.web_request', 'site_visit', visit.id, { layout: layout.name, date }, ip);
   return ok({ id: visit.id }, { status: 201 });
 });

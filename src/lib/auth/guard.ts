@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { NextResponse, type NextRequest } from 'next/server';
 import { getCurrentUser, resolveSession, SESSION_COOKIE, type SessionUser } from './session';
 import { can, canAccessPortal, type Permission } from './permissions';
-import { getDb, newId, nowIso } from '../db';
+import { newId, nowIso, run } from '../db';
 import { HttpError } from '../http-error';
 
 /* ---------- Page guards (server components) ---------- */
@@ -25,15 +25,15 @@ export async function requirePagePermission(permission: Permission): Promise<Ses
 
 export { HttpError };
 
-export function requireApiUser(req: NextRequest): SessionUser {
-  const user = resolveSession(req.cookies.get(SESSION_COOKIE)?.value);
+export async function requireApiUser(req: NextRequest): Promise<SessionUser> {
+  const user = await resolveSession(req.cookies.get(SESSION_COOKIE)?.value);
   if (!user) throw new HttpError(401, 'Authentication required.');
   if (!canAccessPortal(user.role)) throw new HttpError(403, 'Your account does not have portal access.');
   return user;
 }
 
-export function requireApiPermission(req: NextRequest, permission: Permission): SessionUser {
-  const user = requireApiUser(req);
+export async function requireApiPermission(req: NextRequest, permission: Permission): Promise<SessionUser> {
+  const user = await requireApiUser(req);
   if (!can(user.role, permission)) throw new HttpError(403, 'You are not allowed to perform this action.');
   return user;
 }
@@ -91,7 +91,7 @@ export function handle<C = unknown>(fn: (req: NextRequest, ctx: C) => Promise<Re
 
 /* ---------- Audit ---------- */
 
-export function audit(
+export async function audit(
   user: SessionUser | null,
   action: string,
   entity: string,
@@ -99,8 +99,8 @@ export function audit(
   details: Record<string, unknown> = {},
   ip: string | null = null,
 ) {
-  getDb().prepare(`
+  await run(`
     INSERT INTO audit_logs (id, user_id, action, entity, entity_id, details, ip, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(newId(), user?.id ?? null, action, entity, entityId, JSON.stringify(details), ip, nowIso());
+  `, newId(), user?.id ?? null, action, entity, entityId, JSON.stringify(details), ip, nowIso());
 }

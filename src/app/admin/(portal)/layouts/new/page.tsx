@@ -6,5 +6,5 @@ export const dynamic = 'force-dynamic';
 
 export default async function NewLayoutPage() {
   await requirePagePermission('layouts:write');
-  return <LayoutForm mode="create" initial={EMPTY_LAYOUT} media={listMedia({ kind: 'image' })} />;
+  return <LayoutForm mode="create" initial={EMPTY_LAYOUT} media={await listMedia({ kind: 'image' })} />;
 }

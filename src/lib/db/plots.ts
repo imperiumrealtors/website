@@ -1,7 +1,5 @@
-import { getDb, newId, nowIso, toBool } from './index';
+import { all, newId, nowIso, one, run, toBool, transaction, type Row } from './index';
 import type { Facing, PlotRecord, PlotStatus } from '../types';
-
-type Row = Record<string, unknown>;
 
 function rowToPlot(r: Row): PlotRecord {
   return {
@@ -24,59 +22,73 @@ function rowToPlot(r: Row): PlotRecord {
 
 const BASE = 'SELECT p.*, l.name AS layout_name FROM plots p JOIN layouts l ON l.id = p.layout_id';
 
-export function listPlots(opts: { layoutId?: string; status?: PlotStatus; search?: string; limit?: number } = {}): PlotRecord[] {
+export async function listPlots(opts: { layoutId?: string; status?: PlotStatus; search?: string; limit?: number } = {}): Promise<PlotRecord[]> {
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
   if (opts.layoutId) { where.push('p.layout_id = ?'); params.push(opts.layoutId); }
   if (opts.status) { where.push('p.status = ?'); params.push(opts.status); }
   if (opts.search) { where.push('(p.number LIKE ? OR l.name LIKE ?)'); params.push(`%${opts.search}%`, `%${opts.search}%`); }
   const sql = `${BASE} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY l.name, p.number ${opts.limit ? `LIMIT ${Number(opts.limit)}` : ''}`;
-  return (getDb().prepare(sql).all(...(params as string[])) as Row[]).map(rowToPlot);
+  return (await all(sql, ...params)).map(rowToPlot);
 }
 
 /** Plots for a public listing: representative sample first (named units), sorted for display. */
-export function listPlotsForLayout(layoutId: string): PlotRecord[] {
-  return (getDb().prepare(`${BASE} WHERE p.layout_id = ? ORDER BY p.number`).all(layoutId) as Row[]).map(rowToPlot);
+export async function listPlotsForLayout(layoutId: string): Promise<PlotRecord[]> {
+  return (await all(`${BASE} WHERE p.layout_id = ? ORDER BY p.number`, layoutId)).map(rowToPlot);
 }
 
-export function getPlot(id: string): PlotRecord | null {
-  const row = getDb().prepare(`${BASE} WHERE p.id = ?`).get(id) as Row | undefined;
+/** All plots for several layouts in one query, grouped by layout id. */
+export async function listPlotsForLayouts(layoutIds: string[]): Promise<Map<string, PlotRecord[]>> {
+  const grouped = new Map<string, PlotRecord[]>(layoutIds.map((id) => [id, []]));
+  if (!layoutIds.length) return grouped;
+  const rows = await all(`${BASE} WHERE p.layout_id IN (${layoutIds.map(() => '?').join(',')}) ORDER BY p.number`, ...layoutIds);
+  for (const r of rows) grouped.get(r.layout_id as string)?.push(rowToPlot(r));
+  return grouped;
+}
+
+export async function getPlot(id: string): Promise<PlotRecord | null> {
+  const row = await one(`${BASE} WHERE p.id = ?`, id);
   return row ? rowToPlot(row) : null;
 }
 
 export type PlotInput = Omit<PlotRecord, 'id' | 'createdAt' | 'updatedAt' | 'layoutName'>;
 
-export function plotNumberExists(layoutId: string, number: string, exceptId?: string): boolean {
-  return Boolean(getDb().prepare('SELECT id FROM plots WHERE layout_id = ? AND number = ? AND id != ?').get(layoutId, number, exceptId ?? ''));
+export async function plotNumberExists(layoutId: string, number: string, exceptId?: string): Promise<boolean> {
+  return Boolean(await one('SELECT id FROM plots WHERE layout_id = ? AND number = ? AND id != ?', layoutId, number, exceptId ?? ''));
 }
 
-export function createPlot(input: PlotInput): PlotRecord {
+export async function createPlot(input: PlotInput): Promise<PlotRecord> {
   const id = newId();
   const ts = nowIso();
-  getDb().prepare(`
+  await run(`
     INSERT INTO plots (id, layout_id, number, area, dimensions, facing, corner, price_lakhs, price_label, status, notes, created_at, updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(id, input.layoutId, input.number, input.area, input.dimensions, input.facing, input.corner ? 1 : 0,
+  `, id, input.layoutId, input.number, input.area, input.dimensions, input.facing, input.corner ? 1 : 0,
     input.priceLakhs, input.priceLabel, input.status, input.notes, ts, ts);
-  return getPlot(id)!;
+  return (await getPlot(id))!;
 }
 
-export function updatePlot(id: string, input: Partial<PlotInput>): PlotRecord | null {
-  const current = getPlot(id);
+export async function updatePlot(id: string, input: Partial<PlotInput>): Promise<PlotRecord | null> {
+  const current = await getPlot(id);
   if (!current) return null;
   const next = { ...current, ...input };
-  getDb().prepare(`
+  await run(`
     UPDATE plots SET layout_id=?, number=?, area=?, dimensions=?, facing=?, corner=?, price_lakhs=?, price_label=?, status=?, notes=?, updated_at=?
     WHERE id = ?
-  `).run(next.layoutId, next.number, next.area, next.dimensions, next.facing, next.corner ? 1 : 0,
+  `, next.layoutId, next.number, next.area, next.dimensions, next.facing, next.corner ? 1 : 0,
     next.priceLakhs, next.priceLabel, next.status, next.notes, nowIso(), id);
   return getPlot(id);
 }
 
-export function deletePlot(id: string): boolean {
-  return getDb().prepare('DELETE FROM plots WHERE id = ?').run(id).changes > 0;
+export async function deletePlot(id: string): Promise<boolean> {
+  const [, deleted] = await transaction([
+    { sql: 'UPDATE leads SET plot_id = NULL WHERE plot_id = ?', args: [id] },
+    { sql: 'DELETE FROM plots WHERE id = ?', args: [id] },
+  ]);
+  return deleted > 0;
 }
 
-export function plotStatusSummary(): { status: PlotStatus; count: number }[] {
-  return getDb().prepare('SELECT status, COUNT(*) AS count FROM plots GROUP BY status').all() as { status: PlotStatus; count: number }[];
+export async function plotStatusSummary(): Promise<{ status: PlotStatus; count: number }[]> {
+  const rows = await all<{ status: PlotStatus; count: number }>('SELECT status, COUNT(*) AS count FROM plots GROUP BY status');
+  return rows.map((r) => ({ status: r.status, count: Number(r.count) }));
 }

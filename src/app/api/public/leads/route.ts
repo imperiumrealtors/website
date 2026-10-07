@@ -38,7 +38,7 @@ export const POST = handle(async (req: NextRequest) => {
   const source = v.string('source', { max: 40 }) || 'Website';
   v.throwIfInvalid();
 
-  const layout = layoutSlug ? getLayoutBySlug(layoutSlug) : null;
+  const layout = layoutSlug ? await getLayoutBySlug(layoutSlug) : null;
   const notes = [
     purpose && `Purpose: ${purpose}`,
     size && `Plot size: ${size}`,
@@ -47,10 +47,10 @@ export const POST = handle(async (req: NextRequest) => {
     message && `Message: ${message}`,
   ].filter(Boolean).join('\n');
 
-  const lead = createLead({
+  const lead = await createLead({
     name, phone, email, budget, source, notes,
     layoutId: layout?.id ?? null, plotId: null, status: 'New', assignedTo: null,
   });
-  audit(null, 'lead.web_enquiry', 'lead', lead.id, { source, layout: layout?.name ?? null }, ip);
+  await audit(null, 'lead.web_enquiry', 'lead', lead.id, { source, layout: layout?.name ?? null }, ip);
   return ok({ id: lead.id }, { status: 201 });
 });

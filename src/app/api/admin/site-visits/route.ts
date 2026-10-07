@@ -5,11 +5,11 @@ import { validateVisit } from '@/lib/validators';
 import { VISIT_STATUSES, type VisitStatus } from '@/lib/types';
 
 export const GET = handle(async (req: NextRequest) => {
-  requireApiPermission(req, 'visits:read');
+  await requireApiPermission(req, 'visits:read');
   const sp = req.nextUrl.searchParams;
   const status = sp.get('status') as VisitStatus | null;
   const window = sp.get('window');
-  return ok(listVisits({
+  return ok(await listVisits({
     search: sp.get('q') ?? undefined,
     status: status && VISIT_STATUSES.includes(status) ? status : undefined,
     assignedTo: sp.get('assignedTo') ?? undefined,
@@ -19,12 +19,12 @@ export const GET = handle(async (req: NextRequest) => {
 
 export const POST = handle(async (req: NextRequest) => {
   assertSameOrigin(req);
-  const user = requireApiPermission(req, 'visits:write');
+  const user = await requireApiPermission(req, 'visits:write');
   const input = validateVisit(await readJson(req));
-  const visit = createVisit({
+  const visit = await createVisit({
     leadId: null, layoutId: null, visitors: 1, pickup: false, assignedTo: null, status: 'Requested', notes: '',
     ...input,
   } as VisitInput);
-  audit(user, 'visit.create', 'site_visit', visit.id, { customer: visit.customerName, date: visit.preferredDate }, clientIp(req));
+  await audit(user, 'visit.create', 'site_visit', visit.id, { customer: visit.customerName, date: visit.preferredDate }, clientIp(req));
   return ok(visit, { status: 201 });
 });

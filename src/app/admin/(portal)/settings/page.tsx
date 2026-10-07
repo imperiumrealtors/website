@@ -10,8 +10,8 @@ export default async function SettingsPage() {
   const user = await requirePagePermission('settings:read');
   return (
     <SettingsPanel
-      settings={getSettings()}
-      audit={can(user.role, 'audit:read') ? listAuditLogs(60) : []}
+      settings={await getSettings()}
+      audit={can(user.role, 'audit:read') ? await listAuditLogs(60) : []}
       canWrite={can(user.role, 'settings:write')}
       user={{ name: user.name, email: user.email, role: user.role }}
     />

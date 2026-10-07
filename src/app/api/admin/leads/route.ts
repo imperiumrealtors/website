@@ -5,11 +5,11 @@ import { validateLead } from '@/lib/validators';
 import { LEAD_STATUSES, type LeadStatus } from '@/lib/types';
 
 export const GET = handle(async (req: NextRequest) => {
-  requireApiPermission(req, 'leads:read');
+  await requireApiPermission(req, 'leads:read');
   const sp = req.nextUrl.searchParams;
   const status = sp.get('status') as LeadStatus | null;
   const sort = (sp.get('sort') ?? 'newest') as LeadSort;
-  return ok(listLeads({
+  return ok(await listLeads({
     search: sp.get('q') ?? undefined,
     status: status && LEAD_STATUSES.includes(status) ? status : undefined,
     assignedTo: sp.get('assignedTo') ?? undefined,
@@ -20,12 +20,12 @@ export const GET = handle(async (req: NextRequest) => {
 
 export const POST = handle(async (req: NextRequest) => {
   assertSameOrigin(req);
-  const user = requireApiPermission(req, 'leads:write');
+  const user = await requireApiPermission(req, 'leads:write');
   const input = validateLead(await readJson(req));
-  const lead = createLead({
+  const lead = await createLead({
     email: '', layoutId: null, plotId: null, budget: '', source: 'Manual', status: 'New', assignedTo: null, notes: '',
     ...input,
   } as LeadInput);
-  audit(user, 'lead.create', 'lead', lead.id, { name: lead.name }, clientIp(req));
+  await audit(user, 'lead.create', 'lead', lead.id, { name: lead.name }, clientIp(req));
   return ok(lead, { status: 201 });
 });

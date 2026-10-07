@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic';
 export default async function EditLayoutPage({ params }: { params: Promise<{ id: string }> }) {
   await requirePagePermission('layouts:write');
   const { id } = await params;
-  const layout = getLayout(id);
+  const layout = await getLayout(id);
 
   if (!layout) {
     return (
@@ -24,5 +24,5 @@ export default async function EditLayoutPage({ params }: { params: Promise<{ id:
     );
   }
 
-  return <LayoutForm mode="edit" layoutId={id} initial={layout} media={listMedia({ kind: 'image' })} />;
+  return <LayoutForm mode="edit" layoutId={id} initial={layout} media={await listMedia({ kind: 'image' })} />;
 }

@@ -3,6 +3,6 @@ import { getPublicProperties } from '@/lib/public-data';
 
 export const dynamic = 'force-dynamic';
 
-export default function SavedPage() {
-  return <SavedPlots properties={getPublicProperties()} />;
+export default async function SavedPage() {
+  return <SavedPlots properties={await getPublicProperties()} />;
 }

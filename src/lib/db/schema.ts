@@ -141,6 +141,11 @@ CREATE TABLE IF NOT EXISTS media (
 );
 CREATE INDEX IF NOT EXISTS idx_media_layout ON media(layout_id);
 
+CREATE TABLE IF NOT EXISTS media_files (
+  media_id TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  data BLOB NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES users(id) ON DELETE SET NULL,

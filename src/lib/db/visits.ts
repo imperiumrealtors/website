@@ -1,7 +1,5 @@
-import { getDb, newId, nowIso, toBool } from './index';
+import { all, newId, nowIso, one, run, toBool, type Row } from './index';
 import type { SiteVisit, VisitStatus } from '../types';
-
-type Row = Record<string, unknown>;
 
 function rowToVisit(r: Row): SiteVisit {
   return {
@@ -31,11 +29,11 @@ const BASE = `
   LEFT JOIN users u ON u.id = v.assigned_to
 `;
 
-export function listVisits(opts: {
+export async function listVisits(opts: {
   search?: string; status?: VisitStatus; assignedTo?: string; window?: 'upcoming' | 'past' | 'all'; limit?: number;
-} = {}): SiteVisit[] {
+} = {}): Promise<SiteVisit[]> {
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
   const today = new Date().toISOString().slice(0, 10);
   if (opts.search) {
     where.push('(v.customer_name LIKE ? OR v.phone LIKE ? OR l.name LIKE ?)');
@@ -48,46 +46,50 @@ export function listVisits(opts: {
   if (opts.window === 'past') { where.push("(v.preferred_date < ? OR v.status IN ('Completed','Cancelled'))"); params.push(today); }
   const order = opts.window === 'past' ? 'v.preferred_date DESC' : 'v.preferred_date ASC, v.preferred_time ASC';
   const sql = `${BASE} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY ${order} ${opts.limit ? `LIMIT ${Number(opts.limit)}` : ''}`;
-  return (getDb().prepare(sql).all(...(params as string[])) as Row[]).map(rowToVisit);
+  return (await all(sql, ...params)).map(rowToVisit);
 }
 
-export function getVisit(id: string): SiteVisit | null {
-  const row = getDb().prepare(`${BASE} WHERE v.id = ?`).get(id) as Row | undefined;
+export async function getVisit(id: string): Promise<SiteVisit | null> {
+  const row = await one(`${BASE} WHERE v.id = ?`, id);
   return row ? rowToVisit(row) : null;
 }
 
 export type VisitInput = Omit<SiteVisit, 'id' | 'createdAt' | 'updatedAt' | 'layoutName' | 'assignedName'>;
 
-export function createVisit(input: VisitInput): SiteVisit {
+export async function createVisit(input: VisitInput): Promise<SiteVisit> {
   const id = newId();
   const ts = nowIso();
-  getDb().prepare(`
+  await run(`
     INSERT INTO site_visits (id, lead_id, customer_name, phone, layout_id, preferred_date, preferred_time, visitors, pickup, assigned_to, status, notes, created_at, updated_at)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(id, input.leadId, input.customerName, input.phone, input.layoutId, input.preferredDate, input.preferredTime,
+  `, id, input.leadId, input.customerName, input.phone, input.layoutId, input.preferredDate, input.preferredTime,
     input.visitors, input.pickup ? 1 : 0, input.assignedTo, input.status, input.notes, ts, ts);
-  return getVisit(id)!;
+  return (await getVisit(id))!;
 }
 
-export function updateVisit(id: string, input: Partial<VisitInput>): SiteVisit | null {
-  const current = getVisit(id);
+export async function updateVisit(id: string, input: Partial<VisitInput>): Promise<SiteVisit | null> {
+  const current = await getVisit(id);
   if (!current) return null;
   const next = { ...current, ...input };
-  getDb().prepare(`
+  await run(`
     UPDATE site_visits SET lead_id=?, customer_name=?, phone=?, layout_id=?, preferred_date=?, preferred_time=?, visitors=?, pickup=?, assigned_to=?, status=?, notes=?, updated_at=?
     WHERE id = ?
-  `).run(next.leadId, next.customerName, next.phone, next.layoutId, next.preferredDate, next.preferredTime,
+  `, next.leadId, next.customerName, next.phone, next.layoutId, next.preferredDate, next.preferredTime,
     next.visitors, next.pickup ? 1 : 0, next.assignedTo, next.status, next.notes, nowIso(), id);
   return getVisit(id);
 }
 
-export function deleteVisit(id: string): boolean {
-  return getDb().prepare('DELETE FROM site_visits WHERE id = ?').run(id).changes > 0;
+export async function deleteVisit(id: string): Promise<boolean> {
+  return (await run('DELETE FROM site_visits WHERE id = ?', id)) > 0;
 }
 
-export function visitCounts(): { upcoming: number; completed: number } {
+export async function visitCounts(): Promise<{ upcoming: number; completed: number }> {
   const today = new Date().toISOString().slice(0, 10);
-  const upcoming = (getDb().prepare("SELECT COUNT(*) AS n FROM site_visits WHERE preferred_date >= ? AND status IN ('Requested','Confirmed','Rescheduled')").get(today) as { n: number }).n;
-  const completed = (getDb().prepare("SELECT COUNT(*) AS n FROM site_visits WHERE status = 'Completed'").get() as { n: number }).n;
-  return { upcoming, completed };
+  const row = await one<{ upcoming: number; completed: number }>(`
+    SELECT
+      COALESCE(SUM(preferred_date >= ? AND status IN ('Requested','Confirmed','Rescheduled')), 0) AS upcoming,
+      COALESCE(SUM(status = 'Completed'), 0) AS completed
+    FROM site_visits
+  `, today);
+  return { upcoming: Number(row?.upcoming ?? 0), completed: Number(row?.completed ?? 0) };
 }

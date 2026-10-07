@@ -34,28 +34,28 @@ export const POST = handle(async (req: NextRequest) => {
   const key = `${ip ?? 'unknown'}|${email}`;
   if (tooManyAttempts(key)) throw new HttpError(429, 'Too many sign-in attempts. Try again in 15 minutes.');
 
-  const user = getUserWithHashByEmail(email);
+  const user = await getUserWithHashByEmail(email);
   const valid = user ? verifyPassword(password, user.passwordHash) : verifyPassword(password, DUMMY_HASH) && false;
 
   if (!user || !valid) {
     recordFailure(key);
-    audit(null, 'login.failed', 'user', user?.id ?? null, { email }, ip);
+    await audit(null, 'login.failed', 'user', user?.id ?? null, { email }, ip);
     throw new HttpError(401, 'Incorrect email or password.');
   }
   if (user.status !== 'active') {
-    audit(null, 'login.blocked', 'user', user.id, { reason: 'inactive' }, ip);
+    await audit(null, 'login.blocked', 'user', user.id, { reason: 'inactive' }, ip);
     throw new HttpError(403, 'This account has been deactivated. Contact an administrator.');
   }
   if (!canAccessPortal(user.role)) {
-    audit(null, 'login.blocked', 'user', user.id, { reason: 'no-portal-role', role: user.role }, ip);
+    await audit(null, 'login.blocked', 'user', user.id, { reason: 'no-portal-role', role: user.role }, ip);
     throw new HttpError(403, 'Your account does not have access to the admin portal.');
   }
 
   attempts.delete(key);
-  purgeExpiredSessions();
-  const { token, expiresAt } = createSession(user.id, { ip, userAgent: req.headers.get('user-agent') });
-  touchLastLogin(user.id);
-  audit({ ...user, sessionId: '' }, 'login.success', 'user', user.id, {}, ip);
+  await purgeExpiredSessions();
+  const { token, expiresAt } = await createSession(user.id, { ip, userAgent: req.headers.get('user-agent') });
+  await touchLastLogin(user.id);
+  await audit({ ...user, sessionId: '' }, 'login.success', 'user', user.id, {}, ip);
 
   const res = NextResponse.json({ ok: true, data: { id: user.id, name: user.name, email: user.email, role: user.role } });
   res.cookies.set(SESSION_COOKIE, token, sessionCookieOptions(expiresAt));

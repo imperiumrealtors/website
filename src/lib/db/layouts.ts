@@ -1,10 +1,8 @@
-import { getDb, newId, nowIso, parseJson, toBool } from './index';
+import { all, newId, nowIso, one, parseJson, run, toBool, transaction, type Arg, type Row } from './index';
 import { INFRA, FALLBACK_PHOTO } from '../data';
 import type {
   Approval, Facing, LandDocument, LandUse, LayoutRecord, NearbyPlace, PlotStatus, PriceItem, Property, PlotUnit,
 } from '../types';
-
-type Row = Record<string, unknown>;
 
 export function rowToLayout(r: Row): LayoutRecord {
   return {
@@ -73,9 +71,9 @@ function rowToSummary(r: Row): LayoutSummary {
   };
 }
 
-export function listLayouts(opts: { includeInactive?: boolean; search?: string } = {}): LayoutSummary[] {
+export async function listLayouts(opts: { includeInactive?: boolean; search?: string } = {}): Promise<LayoutSummary[]> {
   const where: string[] = [];
-  const params: unknown[] = [];
+  const params: string[] = [];
   if (!opts.includeInactive) where.push('l.active = 1');
   if (opts.search) {
     where.push('(l.name LIKE ? OR l.location LIKE ? OR l.corridor LIKE ?)');
@@ -83,24 +81,21 @@ export function listLayouts(opts: { includeInactive?: boolean; search?: string }
     params.push(q, q, q);
   }
   const sql = `${SUMMARY_SQL} ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY l.featured DESC, l.created_at DESC`;
-  return (getDb().prepare(sql).all(...(params as string[])) as Row[]).map(rowToSummary);
+  return (await all(sql, ...params)).map(rowToSummary);
 }
 
-export function getLayout(id: string): LayoutSummary | null {
-  const row = getDb().prepare(`${SUMMARY_SQL} WHERE l.id = ?`).get(id) as Row | undefined;
+export async function getLayout(id: string): Promise<LayoutSummary | null> {
+  const row = await one(`${SUMMARY_SQL} WHERE l.id = ?`, id);
   return row ? rowToSummary(row) : null;
 }
 
-export function getLayoutBySlug(slug: string, includeInactive = false): LayoutSummary | null {
-  const row = getDb()
-    .prepare(`${SUMMARY_SQL} WHERE l.slug = ? ${includeInactive ? '' : 'AND l.active = 1'}`)
-    .get(slug) as Row | undefined;
+export async function getLayoutBySlug(slug: string, includeInactive = false): Promise<LayoutSummary | null> {
+  const row = await one(`${SUMMARY_SQL} WHERE l.slug = ? ${includeInactive ? '' : 'AND l.active = 1'}`, slug);
   return row ? rowToSummary(row) : null;
 }
 
-export function slugExists(slug: string, exceptId?: string): boolean {
-  const row = getDb().prepare('SELECT id FROM layouts WHERE slug = ? AND id != ?').get(slug, exceptId ?? '') as Row | undefined;
-  return Boolean(row);
+export async function slugExists(slug: string, exceptId?: string): Promise<boolean> {
+  return Boolean(await one('SELECT id FROM layouts WHERE slug = ? AND id != ?', slug, exceptId ?? ''));
 }
 
 export type LayoutInput = Omit<LayoutRecord, 'id' | 'createdAt' | 'updatedAt'>;
@@ -112,7 +107,7 @@ const COLUMNS = [
   'infrastructure', 'photos', 'video_url', 'nearby', 'price_breakdown', 'documents', 'featured', 'new_launch', 'active',
 ] as const;
 
-function inputToValues(input: LayoutInput): unknown[] {
+function inputToValues(input: LayoutInput): Arg[] {
   return [
     input.slug, input.name, input.builder, input.location, input.corridor, input.city, input.address,
     input.lat, input.lng, input.status, input.possession, input.description, input.priceLakhs, input.priceLabel,
@@ -125,32 +120,39 @@ function inputToValues(input: LayoutInput): unknown[] {
   ];
 }
 
-export function createLayout(input: LayoutInput): LayoutSummary {
+export async function createLayout(input: LayoutInput): Promise<LayoutSummary> {
   const id = newId();
   const ts = nowIso();
   const cols = [...COLUMNS, 'id', 'created_at', 'updated_at'];
-  getDb().prepare(`INSERT INTO layouts (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`)
-    .run(...(inputToValues(input) as string[]), id, ts, ts);
-  return getLayout(id)!;
+  await run(`INSERT INTO layouts (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`, ...inputToValues(input), id, ts, ts);
+  return (await getLayout(id))!;
 }
 
-export function updateLayout(id: string, input: LayoutInput): LayoutSummary | null {
+export async function updateLayout(id: string, input: LayoutInput): Promise<LayoutSummary | null> {
   const sets = COLUMNS.map((c) => `${c} = ?`).join(', ');
-  const res = getDb().prepare(`UPDATE layouts SET ${sets}, updated_at = ? WHERE id = ?`)
-    .run(...(inputToValues(input) as string[]), nowIso(), id);
-  return res.changes ? getLayout(id) : null;
+  const changes = await run(`UPDATE layouts SET ${sets}, updated_at = ? WHERE id = ?`, ...inputToValues(input), nowIso(), id);
+  return changes ? getLayout(id) : null;
 }
 
-export function setLayoutActive(id: string, active: boolean): boolean {
-  return getDb().prepare('UPDATE layouts SET active = ?, updated_at = ? WHERE id = ?').run(active ? 1 : 0, nowIso(), id).changes > 0;
+export async function setLayoutActive(id: string, active: boolean): Promise<boolean> {
+  return (await run('UPDATE layouts SET active = ?, updated_at = ? WHERE id = ?', active ? 1 : 0, nowIso(), id)) > 0;
 }
 
-export function deleteLayout(id: string): boolean {
-  return getDb().prepare('DELETE FROM layouts WHERE id = ?').run(id).changes > 0;
+// Foreign-key actions are applied explicitly: hosted libSQL connections do not reliably enforce them.
+export async function deleteLayout(id: string): Promise<boolean> {
+  const results = await transaction([
+    { sql: 'UPDATE leads SET plot_id = NULL WHERE plot_id IN (SELECT id FROM plots WHERE layout_id = ?)', args: [id] },
+    { sql: 'UPDATE leads SET layout_id = NULL WHERE layout_id = ?', args: [id] },
+    { sql: 'UPDATE site_visits SET layout_id = NULL WHERE layout_id = ?', args: [id] },
+    { sql: 'UPDATE media SET layout_id = NULL WHERE layout_id = ?', args: [id] },
+    { sql: 'DELETE FROM plots WHERE layout_id = ?', args: [id] },
+    { sql: 'DELETE FROM layouts WHERE id = ?', args: [id] },
+  ]);
+  return results[results.length - 1] > 0;
 }
 
-export function recentlyUpdatedLayouts(limit = 5): LayoutSummary[] {
-  return (getDb().prepare(`${SUMMARY_SQL} ORDER BY l.updated_at DESC LIMIT ?`).all(limit) as Row[]).map(rowToSummary);
+export async function recentlyUpdatedLayouts(limit = 5): Promise<LayoutSummary[]> {
+  return (await all(`${SUMMARY_SQL} ORDER BY l.updated_at DESC LIMIT ?`, limit)).map(rowToSummary);
 }
 
 /* ---------- Public projection ---------- */

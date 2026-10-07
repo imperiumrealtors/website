@@ -3,8 +3,8 @@ import { getPublicProperties } from '@/lib/public-data';
 
 export const dynamic = 'force-dynamic';
 
-export default function Page() {
-  const properties = getPublicProperties();
+export default async function Page() {
+  const properties = await getPublicProperties();
   return (
     <HomePage
       featured={properties.filter((p) => p.featured).slice(0, 3)}
